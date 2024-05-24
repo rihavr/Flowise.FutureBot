@@ -1,0 +1,23 @@
+version: '3'
+services:
+    flowise:
+        image: flowise
+        build:
+            context: .
+            dockerfile: Dockerfile
+        environment:
+            FLOWISE_USERNAME: ${FLOWISE_USERNAME}
+            FLOWISE_PASSWORD: ${FLOWISE_PASSWORD}
+            OPENAI_API_KEY: ${OPENAI_API_KEY}
+            FUTUREBOT_API_SECRET: ${FUTUREBOT_API_SECRET}
+            LAMBDA_URL: ${LAMBDA_URL}
+            FUTUREBOT_ID: ${FUTUREBOT_ID}
+            APIKEY_PATH: '/root/.flowise'
+            SECRETKEY_PATH: '/root/.flowise'
+            DATABASE_PATH: '/root/.flowise'
+            LOG_PATH: '/root/.flowise/logs'
+        ports:
+            - '3000:3000'
+        volumes:
+            - '/root/.flowise:/root/.flowise'
+        restart: always

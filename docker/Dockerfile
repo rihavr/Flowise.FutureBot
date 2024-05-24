@@ -13,9 +13,13 @@ RUN apk add --no-cache chromium
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-# You can install a specific version like: flowise@1.0.0
-RUN npm install -g flowise
+RUN npm install -g husky
 
+# Install flowise locally in /data
+RUN npm install -g git+https://github.com/rihavr/Flowise.FutureBot.git
+
+# Create and change to working directory
 WORKDIR /data
 
+# Command to execute
 CMD "flowise"

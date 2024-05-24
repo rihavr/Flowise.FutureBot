@@ -31,6 +31,79 @@ import * as fs from 'fs'
 import logger from './logger'
 import { utilAddChatMessage } from './addChatMesage'
 
+import axios, { AxiosRequestConfig } from 'axios'
+
+interface Message {
+    message: string
+    type?: string
+}
+
+interface OpenAIMessage {
+    role: string
+    content: string
+}
+
+async function shouldQueryPinecone(
+    messageHistory: Message[],
+    message: string,
+    vectorDbDescription: string,
+    openAIApiKey: string
+): Promise<boolean> {
+    let convertedHistory: OpenAIMessage[]
+
+    if (!messageHistory) convertedHistory = []
+    else
+        convertedHistory = messageHistory.map((m: Message): OpenAIMessage => {
+            return { role: m.type === 'apiMessage' ? 'assistant' : 'user', content: m.message }
+        })
+
+    let prompt =
+        "Always answer only a single word: YES or NO. I want you to decide, if the last message is only conversational (NO) or if it's something, that might be" +
+        'relevant to the vector database content (YES). The vector database can contain know-how and knowledge of various topics. I am talking to you as if you are the creator of the knowledge.' +
+        "If the question is asking info about you, say YES. If it's small talk, greeting or thanking, say NO." +
+        "If the message wants to explain something, say YES. If it's a specific question, say YES."
+
+    if (vectorDbDescription && vectorDbDescription.length > 0) {
+        prompt +=
+            '\n' +
+            'The vector database content description:' +
+            '\n' +
+            vectorDbDescription +
+            '\n' +
+            'End of database content description. Would you recommend to query the vector database for possible relevant content?'
+    }
+
+    let messages: OpenAIMessage[] = [
+        {
+            role: 'system',
+            content: prompt
+        }
+    ]
+
+    let response = await chatCompletion(
+        messages.concat(convertedHistory.slice(-3)).concat([{ role: 'user', content: message }]),
+        0,
+        openAIApiKey
+    )
+    return response.data.choices[0].message.content.toLowerCase() === 'yes'
+}
+
+async function chatCompletion(messages: OpenAIMessage[], temperature: number, openAIApiKey: string): Promise<any> {
+    const config: AxiosRequestConfig = {}
+    config.headers = {
+        Authorization: `Bearer ${(openAIApiKey ? openAIApiKey : (process.env.OPENAI_API_KEY as string)).trim()}`
+    }
+    return await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+            model: 'gpt-4-turbo',
+            messages: messages,
+            temperature: temperature
+        },
+        config
+    )
+}
+
 /**
  * Build Chatflow
  * @param {Request} req
@@ -39,10 +112,36 @@ import { utilAddChatMessage } from './addChatMesage'
  */
 export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInternal: boolean = false): Promise<any> => {
     try {
+        logger.info('utilBuildChatflow')
+
         const appServer = getRunningExpressApp()
         const chatflowid = req.params.id
         let incomingInput: IncomingInput = req.body
         let nodeToExecuteData: INodeData
+
+        const isMyCloneGPT = chatflowid === 'e2447fff-842f-4584-8eea-e983d5d9e663'
+
+        /*if (isMyCloneGPT && incomingInput.overrideConfig) {
+                let shouldQueryP
+                try {
+                    shouldQueryP = await this.shouldQueryPinecone(
+                        incomingInput.history,
+                        incomingInput.question,
+                        incomingInput.overrideConfig.databaseDescription,
+                        incomingInput.overrideConfig.openAIApiKey
+                    )
+                } catch (error: any) {
+                    if (error.response?.status === 401) throw new Error('Chyba. Chatbot má pravděpodobně neplatný OpenAI API klíč.')
+                }
+                if (!shouldQueryP) {
+                    chatflowid = (process.env.BASIC_CHAT_GPT as string).trim() //switch to conversation without vector database data
+                    if (incomingInput.overrideConfig.databaseDescription)
+                        incomingInput.overrideConfig.systemMessagePrompt +=
+                            "\nThe following is a description of your context data - we are not using context data for this reply, but if needed, use the description to explain what's your knowledge:\n" +
+                            incomingInput.overrideConfig.databaseDescription
+                }
+            }*/
+
         const chatflow = await appServer.AppDataSource.getRepository(ChatFlow).findOneBy({
             id: chatflowid
         })
@@ -50,7 +149,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Chatflow ${chatflowid} not found`)
         }
 
-        const chatId = incomingInput.chatId ?? incomingInput.overrideConfig?.sessionId ?? uuidv4()
+        const chatId = incomingInput.chatId ?? incomingInput.overrideConfig?.sessionId ?? incomingInput.socketIOClientId ?? uuidv4()
         const userMessageDateTime = new Date()
 
         if (!isInternal) {
@@ -136,6 +235,101 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         const parsedFlowData: IReactFlowObject = JSON.parse(flowData)
         const nodes = parsedFlowData.nodes
         const edges = parsedFlowData.edges
+
+        /*      incomingInput.overrideConfig &&
+                    incomingInput.overrideConfig.openAIApiKey &&
+                    incomingInput.overrideConfig.openAIApiKey.length > 1*/
+
+        let mycloneWhitelist = ['pavel-smbc', 'smc-podpora', 'testdata']
+
+        let futurebotPineconePromise
+        let acSummaryPromise
+
+        if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID) {
+            if (!incomingInput.overrideConfig.expertProfileUid)
+                throw new InternalFlowiseError(403, `Nepodařilo se identifikovat uživatele, ujistěte se, že jste přihlášeni.`)
+
+            futurebotPineconePromise = axios.post('https://' + process.env.LAMBDA_URL + '.lambda-url.eu-central-1.on.aws/', {
+                method: 'search',
+                value: req.body.question,
+                userId: incomingInput.overrideConfig.expertProfileUid
+            })
+
+            //logger.info('fetched data for profile ' + incomingInput.overrideConfig.expertProfileUid + ', data:\n' + JSON.stringify(related.texts));
+
+            acSummaryPromise = axios.post('https://futurebot.ai/api/flowise/v1/ac_summary/', {
+                userId: incomingInput.overrideConfig.expertProfileUid,
+                secret: process.env.FUTUREBOT_API_SECRET
+            })
+        }
+
+        if (
+            !process.env.ISLOCAL &&
+            isMyCloneGPT &&
+            !(
+                incomingInput.overrideConfig &&
+                mycloneWhitelist.includes(incomingInput.overrideConfig.pineconeNamespace) &&
+                incomingInput.overrideConfig.systemMessagePrompt
+            )
+        ) {
+            logger.info('Calling check_flowise_permissions')
+
+            if (!incomingInput.overrideConfig) throw new InternalFlowiseError(403, `Chatbot nemá nastavenou konfiguraci.`)
+
+            let permissionsResult = (
+                await axios.post('https://futurebot.ai/api/flowise/v1/check_flowise_permissions/', {
+                    userId: incomingInput.overrideConfig.pineconeNamespace,
+                    sessionId: !incomingInput.chatId ? incomingInput.socketIOClientId : incomingInput.chatId,
+                    secret: process.env.FUTUREBOT_API_SECRET
+                })
+            ).data
+
+            if (!permissionsResult || !permissionsResult.status)
+                throw new InternalFlowiseError(
+                    403,
+                    permissionsResult.reason ??
+                        `Byl dosažen limit požadavků, je vyžadován vlastní chatGPT API klíč. Upozorněte provozovatele této stránky.`
+                )
+
+            if (permissionsResult.customApiKey && permissionsResult.customApiKey.length > 1)
+                incomingInput.overrideConfig.openAIApiKey = permissionsResult.customApiKey
+
+            incomingInput.overrideConfig.systemMessagePrompt = permissionsResult.systemMessagePrompt
+            incomingInput.overrideConfig.topK = permissionsResult.topK
+            incomingInput.overrideConfig.returnSourceDocuments = permissionsResult.returnSourceDocuments
+
+            if (!incomingInput.overrideConfig.systemMessagePrompt) throw new InternalFlowiseError(403, `Chatbot nemá nastavený prompt.`)
+        }
+
+        if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID) {
+            // @ts-ignore
+            let related = (await futurebotPineconePromise).data
+
+            //logger.info('fetched data for profile ' + incomingInput.overrideConfig.expertProfileUid + ', data:\n' + JSON.stringify(related.texts));
+
+            // @ts-ignore
+            let acSummary = (await acSummaryPromise).data
+
+            let summaryString = JSON.stringify(acSummary).replace(/{/g, '(').replace(/}/g, ')')
+
+            //logger.info('fetched ac summary: ' + summaryString);
+
+            const language = acSummary.language
+
+            //logger.info('language: ' + language);
+
+            incomingInput.overrideConfig.systemMessagePrompt =
+                'Odpovědi piš výhradně v jazyce ' +
+                language +
+                ' bez ohledu na text uživatele.\n' +
+                incomingInput.overrideConfig.systemMessagePrompt +
+                '\n--USER PROFILE INFO:\n' +
+                summaryString +
+                '\n--END OF USER PROFILE INFO--\n--START OF USER CONTEXT DATA:\n' +
+                JSON.stringify(related.texts) +
+                '\n--END OF USER CONTEXT DATA--'
+            incomingInput.overrideConfig.isFuturebot = true
+        }
 
         // Get session ID
         const memoryNode = findMemoryNode(nodes, edges)
@@ -288,6 +482,20 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         const nodeModule = await import(nodeInstanceFilePath)
         const nodeInstance = new nodeModule.nodeClass({ sessionId })
 
+        let saveMessagePromise
+        if (!process.env.ISLOCAL && isMyCloneGPT && incomingInput.overrideConfig) {
+            try {
+                saveMessagePromise = axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
+                    userId: incomingInput.overrideConfig.pineconeNamespace,
+                    sessionId: !incomingInput.chatId ? incomingInput.socketIOClientId : incomingInput.chatId,
+                    message: incomingInput.question,
+                    isBot: false
+                })
+            } catch (e) {
+                console.error(e)
+            }
+        }
+
         let result = isStreamValid
             ? await nodeInstance.run(nodeToExecuteData, incomingInput.question, {
                   chatId,
@@ -365,6 +573,25 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         result.chatMessageId = chatMessage.id
         if (sessionId) result.sessionId = sessionId
         if (memoryType) result.memoryType = memoryType
+
+        if (!process.env.ISLOCAL && isMyCloneGPT && incomingInput.overrideConfig) {
+            try {
+                await axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
+                    userId: incomingInput.overrideConfig.pineconeNamespace,
+                    sessionId: !incomingInput.chatId ? incomingInput.socketIOClientId : incomingInput.chatId,
+                    message: result.text ? result.text : result,
+                    isBot: true
+                })
+            } catch (e) {
+                console.error(e)
+            }
+
+            try {
+                await saveMessagePromise
+            } catch (e) {
+                console.error(e)
+            }
+        }
 
         return result
     } catch (e: any) {
