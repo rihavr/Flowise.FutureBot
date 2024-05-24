@@ -1,8 +1,9 @@
 import { applyPatch } from 'fast-json-patch'
 import { DataSource } from 'typeorm'
 import { BaseLanguageModel } from '@langchain/core/language_models/base'
+//import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { BaseRetriever } from '@langchain/core/retrievers'
-import { PromptTemplate, ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts'
+import { ChatPromptTemplate, MessagesPlaceholder, BaseMessagePromptTemplateLike, PromptTemplate } from '@langchain/core/prompts'
 import { Runnable, RunnableSequence, RunnableMap, RunnableBranch, RunnableLambda } from '@langchain/core/runnables'
 import { BaseMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
 import { ConsoleCallbackHandler as LCConsoleCallbackHandler } from '@langchain/core/tracers/console'
@@ -11,10 +12,13 @@ import { formatResponse } from '../../outputparsers/OutputParserHelpers'
 import { StringOutputParser } from '@langchain/core/output_parsers'
 import type { Document } from '@langchain/core/documents'
 import { BufferMemoryInput } from 'langchain/memory'
+import { VectorStore, VectorStoreRetriever } from 'langchain/dist/vectorstores/base'
+import { Callbacks } from 'langchain/callbacks'
 import { ConversationalRetrievalQAChain } from 'langchain/chains'
 import { getBaseClasses, mapChatMessageToBaseMessage } from '../../../src/utils'
 import { ConsoleCallbackHandler, additionalCallbacks } from '../../../src/handler'
 import {
+    IVisionChatModal,
     FlowiseMemory,
     ICommonObject,
     IMessage,
@@ -22,9 +26,13 @@ import {
     INodeData,
     INodeParams,
     IDatabaseEntity,
-    MemoryMethods
+    MemoryMethods,
+    MessageContentImageUrl
 } from '../../../src/Interface'
-import { QA_TEMPLATE, REPHRASE_TEMPLATE, RESPONSE_TEMPLATE } from './prompts'
+
+import { QA_TEMPLATE, REPHRASE_TEMPLATE, RESPONSE_TEMPLATE, qa_template_futurebot } from './prompts'
+//import logger from '../../../../server/src/utils/logger'
+import { addImagesToMessages } from '../../../src/multiModalUtils'
 
 type RetrievalChainInput = {
     chat_history: string
@@ -157,35 +165,35 @@ class ConversationalRetrievalQAChain_Chains implements INode {
         const rephrasePrompt = nodeData.inputs?.rephrasePrompt as string
         const responsePrompt = nodeData.inputs?.responsePrompt as string
 
-        let customResponsePrompt = responsePrompt
-        // If the deprecated systemMessagePrompt is still exists
-        if (systemMessagePrompt) {
-            customResponsePrompt = `${systemMessagePrompt}\n${QA_TEMPLATE}`
-        }
+        const isFuturebot = nodeData.inputs?.isFuturebot as boolean
+        let customResponsePrompt = isFuturebot
+            ? `${systemMessagePrompt}\n${qa_template_futurebot}`
+            : `${systemMessagePrompt}\n${QA_TEMPLATE}`
 
-        const answerChain = createChain(model, vectorStoreRetriever, rephrasePrompt, customResponsePrompt)
+        let messageContent: MessageContentImageUrl[] = []
+
+        const answerChain = createChain(model, vectorStoreRetriever, rephrasePrompt, customResponsePrompt, messageContent)
         return answerChain
     }
 
     async run(nodeData: INodeData, input: string, options: ICommonObject): Promise<string | ICommonObject> {
-        const model = nodeData.inputs?.model as BaseLanguageModel
+        //logger.info("llmSupportsVision")
+        const model = nodeData.inputs?.model as BaseLanguageModel & IVisionChatModal //BaseChatModel & IVisionChatModal
         const externalMemory = nodeData.inputs?.memory
         const vectorStoreRetriever = nodeData.inputs?.vectorStoreRetriever as BaseRetriever
         const systemMessagePrompt = nodeData.inputs?.systemMessagePrompt as string
         const rephrasePrompt = nodeData.inputs?.rephrasePrompt as string
         const responsePrompt = nodeData.inputs?.responsePrompt as string
         const returnSourceDocuments = nodeData.inputs?.returnSourceDocuments as boolean
+        const isFuturebot = nodeData.inputs?.isFuturebot as boolean
+        let customResponsePrompt = isFuturebot
+            ? `${systemMessagePrompt}\n${qa_template_futurebot}`
+            : `${systemMessagePrompt}\n${QA_TEMPLATE}`
         const prependMessages = options?.prependMessages
 
         const appDataSource = options.appDataSource as DataSource
         const databaseEntities = options.databaseEntities as IDatabaseEntity
         const chatflowid = options.chatflowid as string
-
-        let customResponsePrompt = responsePrompt
-        // If the deprecated systemMessagePrompt is still exists
-        if (systemMessagePrompt) {
-            customResponsePrompt = `${systemMessagePrompt}\n${QA_TEMPLATE}`
-        }
 
         let memory: FlowiseMemory | undefined = externalMemory
         const moderations = nodeData.inputs?.inputModeration as Moderation[]
@@ -199,6 +207,9 @@ class ConversationalRetrievalQAChain_Chains implements INode {
             })
         }
 
+        let messageContent: MessageContentImageUrl[] = []
+        messageContent = await addImagesToMessages(nodeData, options, model.multiModalOption)
+
         if (moderations && moderations.length > 0) {
             try {
                 // Use the output of the moderation chain as input for the Conversational Retrieval QA Chain
@@ -209,7 +220,25 @@ class ConversationalRetrievalQAChain_Chains implements INode {
                 return formatResponse(e.message)
             }
         }
-        const answerChain = createChain(model, vectorStoreRetriever, rephrasePrompt, customResponsePrompt)
+
+        //CUSTOM EDIT: copy the score to the ouput, as a field in metaData
+        let vs = vectorStoreRetriever as VectorStoreRetriever
+        ;(vs.vectorStore as VectorStore).similaritySearch = async function (
+            query: string,
+            k = 4,
+            filter: any | undefined = undefined,
+            _callbacks: Callbacks | undefined = undefined // implement passing to embedQuery later
+        ): Promise<any[]> {
+            const results = await this.similaritySearchVectorWithScore(await this.embeddings.embedQuery(query), k, filter)
+
+            return results.map((result) => {
+                let doc = result[0]
+                if (doc.metadata) doc.metadata['score'] = result[1]
+                return doc
+            })
+        }
+
+        const answerChain = createChain(model, vectorStoreRetriever, rephrasePrompt, customResponsePrompt, messageContent)
 
         const history = ((await memory.getChatMessages(this.sessionId, false, prependMessages)) as IMessage[]) ?? []
 
@@ -284,6 +313,7 @@ class ConversationalRetrievalQAChain_Chains implements INode {
 }
 
 const createRetrieverChain = (llm: BaseLanguageModel, retriever: Runnable, rephrasePrompt: string) => {
+    //logger.info('ConversationalRetrievalQAChain createRetrieverChain')
     // Small speed/accuracy optimization: no need to rephrase the first question
     // since there shouldn't be any meta-references to prior chat history
     const CONDENSE_QUESTION_PROMPT = PromptTemplate.fromTemplate(rephrasePrompt)
@@ -335,8 +365,11 @@ const createChain = (
     llm: BaseLanguageModel,
     retriever: Runnable,
     rephrasePrompt = REPHRASE_TEMPLATE,
-    responsePrompt = RESPONSE_TEMPLATE
+    responsePrompt = RESPONSE_TEMPLATE,
+    humanImageMessages: MessageContentImageUrl[]
 ) => {
+    //logger.info('ConversationalRetrievalQAChain createChain')
+
     const retrieverChain = createRetrieverChain(llm, retriever, rephrasePrompt)
 
     const context = RunnableMap.from({
@@ -358,11 +391,15 @@ const createChain = (
         })
     }).withConfig({ tags: ['RetrieveDocs'] })
 
-    const prompt = ChatPromptTemplate.fromMessages([
+    let msgs: BaseMessagePromptTemplateLike[] = [
         ['system', responsePrompt],
         new MessagesPlaceholder('chat_history'),
         ['human', `{question}`]
-    ])
+    ]
+
+    if (humanImageMessages.length) msgs.push(new HumanMessage({ content: [...humanImageMessages] }))
+
+    const prompt = ChatPromptTemplate.fromMessages(msgs)
 
     const responseSynthesizerChain = RunnableSequence.from([prompt, llm, new StringOutputParser()]).withConfig({
         tags: ['GenerateResponse']

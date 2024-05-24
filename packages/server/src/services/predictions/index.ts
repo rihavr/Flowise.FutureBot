@@ -10,10 +10,7 @@ const buildChatflow = async (fullRequest: Request, ioServer: Server) => {
         const dbResponse = await utilBuildChatflow(fullRequest, ioServer)
         return dbResponse
     } catch (error) {
-        throw new InternalFlowiseError(
-            StatusCodes.INTERNAL_SERVER_ERROR,
-            `Error: predictionsServices.buildChatflow - ${getErrorMessage(error)}`
-        )
+        throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, `${getErrorMessage(error)}`)
     }
 }
 
