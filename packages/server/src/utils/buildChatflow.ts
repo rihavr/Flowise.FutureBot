@@ -321,12 +321,18 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
         if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID) {
             // @ts-ignore
-            let related = (await futurebotPineconePromise).data
-
+            let related
+            try {
+                if (futurebotPineconePromise) related = (await futurebotPineconePromise).data
+            } catch (e) {
+                logger.info('No context data found for profile ' + incomingInput.overrideConfig.expertProfileUid)
+            }
             //logger.info('fetched data for profile ' + incomingInput.overrideConfig.expertProfileUid + ', data:\n' + JSON.stringify(related.texts));
 
             // @ts-ignore
             let acSummary = (await acSummaryPromise).data
+
+            if (acSummary && acSummary.error) throw new InternalFlowiseError(403, acSummary.reason)
 
             let summaryString = JSON.stringify(acSummary).replace(/{/g, '(').replace(/}/g, ')')
 
@@ -344,7 +350,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 '\n--USER PROFILE INFO:\n' +
                 summaryString +
                 '\n--END OF USER PROFILE INFO--\n--START OF USER CONTEXT DATA:\n' +
-                JSON.stringify(related.texts) +
+                (related ? JSON.stringify(related.texts) : 'empty') +
                 '\n--END OF USER CONTEXT DATA--'
             incomingInput.overrideConfig.isFuturebot = true
         }
