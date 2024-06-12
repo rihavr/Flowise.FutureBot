@@ -319,6 +319,10 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             if (!incomingInput.overrideConfig.systemMessagePrompt) throw new InternalFlowiseError(403, `Chatbot nemá nastavený prompt.`)
         }
 
+        if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.API_TEST_ID) {
+            return { statusCode: 200, message: 'OK' }
+        }
+
         if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID) {
             // @ts-ignore
             let related
