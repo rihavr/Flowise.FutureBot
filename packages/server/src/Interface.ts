@@ -214,6 +214,7 @@ export interface IncomingInput {
     overrideConfig?: ICommonObject
     socketIOClientId?: string
     chatId?: string
+    limitId?: string
     stopNodeId?: string
     uploads?: IFileUpload[]
     leadEmail?: string

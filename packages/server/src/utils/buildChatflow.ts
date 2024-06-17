@@ -298,6 +298,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 await axios.post('https://futurebot.ai/api/flowise/v1/check_flowise_permissions/', {
                     userId: incomingInput.overrideConfig.pineconeNamespace,
                     sessionId: !incomingInput.chatId ? incomingInput.socketIOClientId : incomingInput.chatId,
+                    limitId: incomingInput.limitId,
                     secret: process.env.FUTUREBOT_API_SECRET
                 })
             ).data
@@ -539,6 +540,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 saveMessagePromise = axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
                     userId: incomingInput.overrideConfig.pineconeNamespace,
                     sessionId: !incomingInput.chatId ? incomingInput.socketIOClientId : incomingInput.chatId,
+                    limitId: incomingInput.limitId,
                     message: incomingInput.question,
                     isBot: false
                 })
@@ -633,6 +635,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 await axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
                     userId: incomingInput.overrideConfig.pineconeNamespace,
                     sessionId: !incomingInput.chatId ? incomingInput.socketIOClientId : incomingInput.chatId,
+                    limitId: incomingInput.limitId,
                     message: result.text ? result.text : result,
                     isBot: true
                 })
