@@ -339,7 +339,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
             if (acSummary && acSummary.error) throw new InternalFlowiseError(403, acSummary.reason)
 
-            let summaryString = JSON.stringify(acSummary).replace(/{/g, '(').replace(/}/g, ')')
+            let summaryString = JSON.stringify(acSummary)
 
             //logger.info('fetched ac summary: ' + summaryString);
 
@@ -347,7 +347,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
             //logger.info('language: ' + language);
 
-            incomingInput.overrideConfig.systemMessagePrompt =
+            let futureBotPrompt =
                 'Odpovědi piš výhradně v jazyce ' +
                 language +
                 ' bez ohledu na text uživatele.\n' +
@@ -357,6 +357,8 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 '\n--END OF USER PROFILE INFO--\n--START OF USER CONTEXT DATA:\n' +
                 (related ? JSON.stringify(related.texts) : 'empty') +
                 '\n--END OF USER CONTEXT DATA--'
+
+            incomingInput.overrideConfig.systemMessagePrompt = futureBotPrompt.replace(/{/g, '{{').replace(/}/g, '}}') //needed to ensure the template replacing {terms} works
             incomingInput.overrideConfig.isFuturebot = true
         }
 
