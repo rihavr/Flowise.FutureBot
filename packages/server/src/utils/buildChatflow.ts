@@ -135,6 +135,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         let nodeToExecuteData: INodeData
 
         const isMyCloneGPT = chatflowid === 'e2447fff-842f-4584-8eea-e983d5d9e663'
+        const isInternalFuturebotChat = chatflowid === process.env.INTERNAL_CHATFLOW_ID
 
         /*if (isMyCloneGPT && incomingInput.overrideConfig) {
                 let shouldQueryP
@@ -537,11 +538,15 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         const nodeInstance = new nodeModule.nodeClass({ sessionId })
 
         let saveMessagePromise
-        if (!process.env.ISLOCAL && isMyCloneGPT && incomingInput.overrideConfig) {
+        if (!process.env.ISLOCAL && (isMyCloneGPT || isInternalFuturebotChat) && incomingInput.overrideConfig) {
             try {
                 saveMessagePromise = axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
-                    userId: incomingInput.overrideConfig.pineconeNamespace,
-                    sessionId: !incomingInput.chatId ? incomingInput.socketIOClientId : incomingInput.chatId,
+                    userId: isInternalFuturebotChat ? 'internal' : incomingInput.overrideConfig.pineconeNamespace,
+                    sessionId: isInternalFuturebotChat
+                        ? incomingInput.overrideConfig.instanceId
+                        : !incomingInput.chatId
+                        ? incomingInput.socketIOClientId
+                        : incomingInput.chatId,
                     limitId: incomingInput.limitId,
                     message: incomingInput.question,
                     isBot: false
@@ -632,11 +637,15 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         if (sessionId) result.sessionId = sessionId
         if (memoryType) result.memoryType = memoryType
 
-        if (!process.env.ISLOCAL && isMyCloneGPT && incomingInput.overrideConfig) {
+        if (!process.env.ISLOCAL && (isMyCloneGPT || isInternalFuturebotChat) && incomingInput.overrideConfig) {
             try {
                 await axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
-                    userId: incomingInput.overrideConfig.pineconeNamespace,
-                    sessionId: !incomingInput.chatId ? incomingInput.socketIOClientId : incomingInput.chatId,
+                    userId: isInternalFuturebotChat ? 'internal' : incomingInput.overrideConfig.pineconeNamespace,
+                    sessionId: isInternalFuturebotChat
+                        ? incomingInput.overrideConfig.instanceId
+                        : !incomingInput.chatId
+                        ? incomingInput.socketIOClientId
+                        : incomingInput.chatId,
                     limitId: incomingInput.limitId,
                     message: result.text ? result.text : result,
                     isBot: true
