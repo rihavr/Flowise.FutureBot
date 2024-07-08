@@ -56,7 +56,7 @@ interface OpenAIMessage {
     content: string
 }
 
-async function shouldQueryPinecone(
+/*async function shouldQueryPinecone(
     messageHistory: Message[],
     message: string,
     vectorDbDescription: string,
@@ -95,21 +95,47 @@ async function shouldQueryPinecone(
 
     let response = await chatCompletion(
         messages.concat(convertedHistory.slice(-3)).concat([{ role: 'user', content: message }]),
+        'gpt-4o',
         0,
         openAIApiKey
     )
     return response.data.choices[0].message.content.toLowerCase() === 'yes'
-}
+}*/
 
-async function chatCompletion(messages: OpenAIMessage[], temperature: number, openAIApiKey: string): Promise<any> {
+async function chatCompletion(messages: OpenAIMessage[], model: string, temperature: number, openAIApiKey: string): Promise<any> {
     const config: AxiosRequestConfig = {}
+
+    try {
+        if (model === 'claude-3-haiku-20240307') {
+            const anthropicApiKey = process.env.ANTHROPIC_API_KEY
+            config.headers = {
+                'x-api-key': anthropicApiKey,
+                'content-type': 'application/json',
+                'anthropic-version': '2023-06-01'
+            }
+            return await axios.post(
+                'https://api.anthropic.com/v1/messages',
+                {
+                    model: model,
+                    max_tokens: 4096,
+                    system: messages[0].content,
+                    messages: messages.slice(1),
+                    temperature: temperature
+                },
+                config
+            )
+        }
+    } catch (e) {
+        return undefined
+    }
+
     config.headers = {
         Authorization: `Bearer ${(openAIApiKey ? openAIApiKey : (process.env.OPENAI_API_KEY as string)).trim()}`
     }
     return await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-            model: 'gpt-4-turbo',
+            model: model,
             messages: messages,
             temperature: temperature
         },
@@ -261,25 +287,13 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
         let mycloneWhitelist = ['pavel-smbc', 'smc-podpora', 'testdata']
 
+        let language
         let futurebotPineconePromise
         let acSummaryPromise
 
         if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID) {
-            if (!incomingInput.overrideConfig.expertProfileUid)
+            if (!incomingInput.overrideConfig.expertProfileUid && !incomingInput.overrideConfig.wpUid)
                 throw new InternalFlowiseError(403, `Nepodařilo se identifikovat uživatele, ujistěte se, že jste přihlášeni.`)
-
-            futurebotPineconePromise = axios.post('https://' + process.env.LAMBDA_URL + '.lambda-url.eu-central-1.on.aws/', {
-                method: 'search',
-                value: req.body.question,
-                userId: incomingInput.overrideConfig.expertProfileUid
-            })
-
-            //logger.info('fetched data for profile ' + incomingInput.overrideConfig.expertProfileUid + ', data:\n' + JSON.stringify(related.texts));
-
-            acSummaryPromise = axios.post('https://futurebot.ai/api/flowise/v1/ac_summary/', {
-                userId: incomingInput.overrideConfig.expertProfileUid,
-                secret: process.env.FUTUREBOT_API_SECRET
-            })
         }
 
         if (
@@ -300,6 +314,8 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                     userId: incomingInput.overrideConfig.pineconeNamespace,
                     sessionId: !incomingInput.chatId ? incomingInput.socketIOClientId : incomingInput.chatId,
                     limitId: incomingInput.limitId,
+                    expertProfileUid: incomingInput.overrideConfig.expertProfileUid,
+                    wpUid: incomingInput.overrideConfig.wpUid,
                     secret: process.env.FUTUREBOT_API_SECRET
                 })
             ).data
@@ -314,6 +330,8 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             if (permissionsResult.customApiKey && permissionsResult.customApiKey.length > 1)
                 incomingInput.overrideConfig.openAIApiKey = permissionsResult.customApiKey
 
+            language = permissionsResult.language
+
             incomingInput.overrideConfig.systemMessagePrompt = permissionsResult.systemMessagePrompt
             incomingInput.overrideConfig.topK = permissionsResult.topK
             incomingInput.overrideConfig.returnSourceDocuments = permissionsResult.returnSourceDocuments
@@ -327,40 +345,147 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
         if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID) {
             // @ts-ignore
-            let related
-            try {
-                if (futurebotPineconePromise) related = (await futurebotPineconePromise).data
-            } catch (e) {
-                logger.info('No context data found for profile ' + incomingInput.overrideConfig.expertProfileUid)
+
+            let split = incomingInput.overrideConfig.systemMessagePrompt.split('--NÁSTROJE FUTUREBOTA:')
+
+            let pretools = split[0]
+            let split2 = split[1].split('--KONEC SEZNAMU NÁSTROJŮ FUTUREBOTA--')
+
+            let tools = split2[0]
+            let postTools = split2[1]
+
+            let messages: OpenAIMessage[] = [
+                {
+                    role: 'system',
+                    content:
+                        "You are an internal agent for AI software called FutureBot. You are not FutureBot and you don't talk to users, you only help internally with API decisions." +
+                        '\nYour task is to decide what the conversation (of the user with FutureBot) is about and accordingly provide JSON data that we will use for building a system prompt for FutureBot.\n' +
+                        '\n' +
+                        'Your task is to make decisions and output strictly and only in JSON format (no other text) with keys:\n' +
+                        '"isGeneral" (true or false), "isAboutUser" (true or false), "isAboutFuturebot" (true or false), "relevantTools" (string)' +
+                        '\n\nYou are not allowed to answer the questions the user is asking, your one and only goal is to provide the JSON.\n\n' +
+                        'Based on the chat history provided in the user message, make a decision and answer with true or false for each key:\n' +
+                        "isGeneral - user is talking conversationally or about general knowledge (things like Hello, Bye, Thank you, how to write a PHP loop, who's the current president)\n" +
+                        'isAboutUser - user is talking about his products or using specific words that might be a name of his product, or user wants you to generate some creative content\n' +
+                        'isAboutFuturebot - user is asking for information about your (FutureBot\'s) capabilities, tools, products, services, billing, account, pricing or any other information related to FutureBot itself or asking any questions that seem like a request for customer support. Additionally, for this category there are also some keywords that should undoubtedly mean it\'s this category: "Authenticity Core, know-how, Expert nové éry, AI nástroje, myclone, chatbot"\n' +
+                        'relevantTools - from the list of available FutureBot tools, choose tools that might be related to what user wants FutureBot to do in his last message. Write the full info about those tools as in the original (name, description, and most importantly also link). This must be a string. This property might be empty, if the last message is just conversational or not asking FutureBot to do anything special.\n' +
+                        '\n ---LIST OF ALL FUTUREBOT TOOLS:---\n' +
+                        tools
+                }
+            ]
+
+            let convertedHistory: OpenAIMessage[]
+
+            if (!incomingInput.history) convertedHistory = []
+            else
+                convertedHistory = incomingInput.history.slice(-4).map((m: Message): OpenAIMessage => {
+                    return { role: m.type === 'apiMessage' ? 'assistant' : 'user', content: m.message }
+                })
+
+            logger.info('agent decision history:' + JSON.stringify(convertedHistory))
+
+            let conversationHistory = ''
+            for (let i = 0; i < convertedHistory.length; i++) {
+                conversationHistory +=
+                    (convertedHistory[i].role === 'user' ? '\n--USER QUESTION:--\n' : '\n--FUTUREBOT ANSWER:--\n') +
+                    convertedHistory[i].content
             }
-            //logger.info('fetched data for profile ' + incomingInput.overrideConfig.expertProfileUid + ', data:\n' + JSON.stringify(related.texts));
 
-            // @ts-ignore
-            let acSummary = (await acSummaryPromise).data
+            conversationHistory += '\n--USER QUESTION:--\n' + incomingInput.question
 
-            if (acSummary && acSummary.error) throw new InternalFlowiseError(403, acSummary.reason)
+            messages.push({ role: 'user', content: conversationHistory })
 
-            let summaryString = JSON.stringify(acSummary)
+            let response = await chatCompletion(messages, 'claude-3-haiku-20240307', 0, process.env.OPENAI_API_KEY as string)
 
-            //logger.info('fetched ac summary: ' + summaryString);
+            logger.info('agent decision:' + response.data.content[0].text) //response.data.choices[0].message.content);
 
-            const language = acSummary.language
+            let agentResult = response.data.content[0].text
+            let json
+            try {
+                json = JSON.parse(agentResult.substring(agentResult.indexOf('{'), agentResult.lastIndexOf('}') + 1))
+            } catch (e) {
+                logger.warn('WARNING: failed to parse agent json, agentResult: ' + agentResult)
+                json = { isGeneral: true, isAboutUser: true, isAboutFuturebot: true, relevantTools: tools }
+            }
 
-            //logger.info('language: ' + language);
+            let profileKnowHow
+            let acSummary
+            let summaryString
+
+            if (incomingInput.overrideConfig.expertProfileUid) {
+                if (json.isAboutUser)
+                    futurebotPineconePromise = getKnowHow(req.body.question, incomingInput.overrideConfig.expertProfileUid)
+
+                acSummaryPromise = getAcSummary(incomingInput.overrideConfig.expertProfileUid, json.isAboutUser ? 'full' : 'basic')
+            }
+
+            try {
+                if (futurebotPineconePromise) profileKnowHow = (await futurebotPineconePromise).data
+            } catch (e) {
+                if (incomingInput.overrideConfig.expertProfileUid)
+                    logger.info('No context data found for profile ' + incomingInput.overrideConfig.expertProfileUid)
+            }
+
+            if (acSummaryPromise) acSummary = (await acSummaryPromise).data
+
+            if (acSummary) {
+                if (acSummary.error) throw new InternalFlowiseError(403, acSummary.reason)
+
+                summaryString = JSON.stringify(acSummary)
+                language = acSummary.language
+            }
+
+            if (!json.isAboutFuturebot) {
+                incomingInput.overrideConfig.pineconeNamespace = 'emptyfuturebotnotcontainsanything' //should just internally throw error because not existing namespace and not query pinecone
+                incomingInput.overrideConfig.topK = 1
+            }
 
             let futureBotPrompt =
-                'Odpovědi piš výhradně v jazyce ' +
-                language +
-                ' bez ohledu na text uživatele.\n' +
-                incomingInput.overrideConfig.systemMessagePrompt +
+                (!language ? '' : 'Odpovědi piš v jazyce ' + language + '\n') +
+                pretools +
+                '\n--RELEVANTNÍ NÁSTROJE FUTUREBOTA PRO TENTO DOTAZ:--\n' +
+                (!json.relevantTools || json.relevantTools === '' ? 'žádné' : json.relevantTools) +
+                '\n--KONEC SEZNAMU NÁSTROJŮ FUTUREBOTA--\n' +
+                postTools +
                 '\n--USER PROFILE INFO:\n' +
-                summaryString +
+                (!summaryString ? 'empty' : summaryString) +
                 '\n--END OF USER PROFILE INFO--\n--START OF USER CONTEXT DATA:\n' +
-                (related ? JSON.stringify(related.texts) : 'empty') +
+                (profileKnowHow ? JSON.stringify(profileKnowHow.texts) : 'empty') +
                 '\n--END OF USER CONTEXT DATA--'
+
+            // remove excessive backslashes
+            futureBotPrompt = futureBotPrompt.replace(/\\+/g, '\\')
 
             incomingInput.overrideConfig.systemMessagePrompt = futureBotPrompt.replace(/{/g, '{{').replace(/}/g, '}}') //needed to ensure the template replacing {terms} works
             incomingInput.overrideConfig.isFuturebot = true
+        }
+
+        if (isInternalFuturebotChat && incomingInput.overrideConfig && incomingInput.overrideConfig.expertProfileUid) {
+            let acsPromise
+            let knowHowPromise
+            if (incomingInput.overrideConfig.systemMessagePrompt.includes('{ac_summary}'))
+                acsPromise = getAcSummary(incomingInput.overrideConfig.expertProfileUid, 'full')
+
+            if (incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how}'))
+                knowHowPromise = getKnowHow(req.body.question, incomingInput.overrideConfig.expertProfileUid)
+
+            if (knowHowPromise) {
+                let profileKnowHow = (await knowHowPromise).data
+                if (profileKnowHow && profileKnowHow.texts)
+                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                        '{know_how}',
+                        JSON.stringify(profileKnowHow.texts)
+                    )
+            }
+
+            if (acsPromise) {
+                let acs = (await acsPromise).data
+                if (acs && !acs.error)
+                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                        '{ac_summary}',
+                        JSON.stringify(acs)
+                    )
+            }
         }
 
         /*** Get session ID ***/
@@ -541,7 +666,11 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         if (!process.env.ISLOCAL && (isMyCloneGPT || isInternalFuturebotChat) && incomingInput.overrideConfig) {
             try {
                 saveMessagePromise = axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
-                    userId: isInternalFuturebotChat ? 'internal' : incomingInput.overrideConfig.pineconeNamespace,
+                    userId: isInternalFuturebotChat
+                        ? 'internal'
+                        : incomingInput.overrideConfig.isFuturebot
+                        ? process.env.FUTUREBOT_ID
+                        : incomingInput.overrideConfig.pineconeNamespace,
                     sessionId: isInternalFuturebotChat
                         ? incomingInput.overrideConfig.instanceId
                         : !incomingInput.chatId
@@ -640,7 +769,11 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         if (!process.env.ISLOCAL && (isMyCloneGPT || isInternalFuturebotChat) && incomingInput.overrideConfig) {
             try {
                 await axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
-                    userId: isInternalFuturebotChat ? 'internal' : incomingInput.overrideConfig.pineconeNamespace,
+                    userId: isInternalFuturebotChat
+                        ? 'internal'
+                        : incomingInput.overrideConfig.isFuturebot
+                        ? process.env.FUTUREBOT_ID
+                        : incomingInput.overrideConfig.pineconeNamespace,
                     sessionId: isInternalFuturebotChat
                         ? incomingInput.overrideConfig.instanceId
                         : !incomingInput.chatId
@@ -666,6 +799,22 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         logger.error('[server]: Error:', e)
         throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, getErrorMessage(e))
     }
+}
+
+async function getKnowHow(question: string, expertProfileUid: string) {
+    return await axios.post('https://' + process.env.LAMBDA_URL + '.lambda-url.eu-central-1.on.aws/', {
+        method: 'search',
+        value: question,
+        userId: expertProfileUid
+    })
+}
+
+async function getAcSummary(expertProfileUid: string, scope: string) {
+    return await axios.post('https://futurebot.ai/api/flowise/v1/ac_summary/', {
+        userId: expertProfileUid,
+        scope: scope,
+        secret: process.env.FUTUREBOT_API_SECRET
+    })
 }
 
 const utilBuildAgentResponse = async (
