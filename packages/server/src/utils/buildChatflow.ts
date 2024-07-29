@@ -382,7 +382,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                     return { role: m.type === 'apiMessage' ? 'assistant' : 'user', content: m.message }
                 })
 
-            logger.info('agent decision history:' + JSON.stringify(convertedHistory))
+            //logger.info('agent decision history:' + JSON.stringify(convertedHistory))
 
             let conversationHistory = ''
             for (let i = 0; i < convertedHistory.length; i++) {
@@ -397,7 +397,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
             let response = await chatCompletion(messages, 'claude-3-haiku-20240307', 0, process.env.OPENAI_API_KEY as string)
 
-            logger.info('agent decision:' + response.data.content[0].text) //response.data.choices[0].message.content);
+            //logger.info('agent decision:' + response.data.content[0].text) //response.data.choices[0].message.content);
 
             let agentResult = response.data.content[0].text
             let json

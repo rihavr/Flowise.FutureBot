@@ -252,7 +252,7 @@ class ConversationalRetrievalQAChain_Chains implements INode {
         }
 
         const stream = answerChain.streamLog(
-            { question: input, chat_history: history },
+            { question: input, chat_history: preventRepeatingRoles(history) },
             { callbacks },
             {
                 includeNames: [sourceRunnableName]
@@ -310,6 +310,27 @@ class ConversationalRetrievalQAChain_Chains implements INode {
         if (returnSourceDocuments) return { text, sourceDocuments }
         else return { text }
     }
+}
+
+function preventRepeatingRoles(messages: IMessage[]): IMessage[] | BaseMessage[] {
+    if (messages.length === 0) return []
+
+    const mergedMessages = []
+    let currentMessage = { ...messages[0] }
+
+    for (let i = 1; i < messages.length; i++) {
+        if (messages[i].type === currentMessage.type) {
+            currentMessage.message += '\n\n' + messages[i].message
+        } else {
+            mergedMessages.push(currentMessage)
+            currentMessage = { ...messages[i] }
+        }
+    }
+    mergedMessages.push(currentMessage)
+
+    if (mergedMessages[0].type === 'apiMessage') mergedMessages.shift() //remove from history, anthropic will throw error if first message is from assistant
+
+    return mergedMessages
 }
 
 const createRetrieverChain = (llm: BaseLanguageModel, retriever: Runnable, rephrasePrompt: string) => {
@@ -446,15 +467,17 @@ class BufferMemory extends FlowiseMemory implements MemoryMethods {
     ): Promise<IMessage[] | BaseMessage[]> {
         if (!overrideSessionId) return []
 
-        const chatMessage = await this.appDataSource.getRepository(this.databaseEntities['ChatMessage']).find({
-            where: {
-                sessionId: overrideSessionId,
-                chatflowid: this.chatflowid
-            },
-            order: {
-                createdDate: 'ASC'
-            }
-        })
+        const chatMessage = prependMessages?.length
+            ? []
+            : await this.appDataSource.getRepository(this.databaseEntities['ChatMessage']).find({
+                  where: {
+                      sessionId: overrideSessionId,
+                      chatflowid: this.chatflowid
+                  },
+                  order: {
+                      createdDate: 'ASC'
+                  }
+              })
 
         if (prependMessages?.length) {
             chatMessage.unshift(...prependMessages)
@@ -467,11 +490,11 @@ class BufferMemory extends FlowiseMemory implements MemoryMethods {
         let returnIMessages: IMessage[] = []
         for (const m of chatMessage) {
             returnIMessages.push({
-                message: m.content as string,
-                type: m.role
+                message: (m.content as string) ?? (m.message as string),
+                type: m.role ?? m.type
             })
         }
-        return returnIMessages
+        return returnIMessages.slice(-10)
     }
 
     async addChatMessages(): Promise<void> {
