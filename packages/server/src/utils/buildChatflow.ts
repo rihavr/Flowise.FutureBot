@@ -794,6 +794,18 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             }
         }
 
+        if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID) {
+            try {
+                await axios.post('https://futurebot.ai/api/flowise/v1/charge_credits/', {
+                    expertProfileUid: incomingInput.overrideConfig.expertProfileUid,
+                    wpUid: incomingInput.overrideConfig.wpUid,
+                    secret: process.env.FUTUREBOT_API_SECRET
+                })
+            } catch (e) {
+                console.error(e)
+            }
+        }
+
         return result
     } catch (e) {
         logger.error('[server]: Error:', e)
