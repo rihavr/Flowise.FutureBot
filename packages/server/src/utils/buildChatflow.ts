@@ -343,7 +343,9 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             return { statusCode: 200, message: 'OK' }
         }
 
-        if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID) {
+        let isFuturebot = incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID
+
+        if (isFuturebot && incomingInput.overrideConfig) {
             // @ts-ignore
 
             let split = incomingInput.overrideConfig.systemMessagePrompt.split('--NÁSTROJE FUTUREBOTA:')
@@ -668,7 +670,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 saveMessagePromise = axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
                     userId: isInternalFuturebotChat
                         ? 'internal'
-                        : incomingInput.overrideConfig.isFuturebot
+                        : isFuturebot
                         ? process.env.FUTUREBOT_ID
                         : incomingInput.overrideConfig.pineconeNamespace,
                     sessionId: isInternalFuturebotChat
@@ -771,7 +773,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 await axios.post('https://futurebot.ai/api/flowise/v1/save_flowise_message/', {
                     userId: isInternalFuturebotChat
                         ? 'internal'
-                        : incomingInput.overrideConfig.isFuturebot
+                        : isFuturebot
                         ? process.env.FUTUREBOT_ID
                         : incomingInput.overrideConfig.pineconeNamespace,
                     sessionId: isInternalFuturebotChat
@@ -794,7 +796,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             }
         }
 
-        if (incomingInput.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID) {
+        if (isFuturebot && incomingInput.overrideConfig) {
             try {
                 await axios.post('https://futurebot.ai/api/flowise/v1/charge_credits/', {
                     expertProfileUid: incomingInput.overrideConfig.expertProfileUid,
