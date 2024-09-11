@@ -483,7 +483,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 if (profileKnowHow && profileKnowHow.texts)
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
                         '{know_how}',
-                        JSON.stringify(profileKnowHow.texts)
+                        JSON.stringify(profileKnowHow.texts).replaceAll('{', '⦃').replaceAll('}', '⦄')
                     )
             }
 
@@ -492,7 +492,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 if (internalKnowHow && internalKnowHow.texts)
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
                         '{know_how_internal}',
-                        JSON.stringify(internalKnowHow.texts)
+                        JSON.stringify(internalKnowHow.texts).replaceAll('{', '⦃').replaceAll('}', '⦄')
                     )
             }
 
@@ -501,7 +501,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 if (acs && !acs.error)
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
                         '{ac_summary}',
-                        JSON.stringify(acs)
+                        JSON.stringify(acs).replaceAll('{', '⦃').replaceAll('}', '⦄')
                     )
             }
         }
