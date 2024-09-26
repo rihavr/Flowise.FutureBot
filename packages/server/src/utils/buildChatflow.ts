@@ -422,13 +422,13 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             }
 
             try {
-                if (futurebotPineconePromise) profileKnowHow = (await futurebotPineconePromise).data
+                if (futurebotPineconePromise) profileKnowHow = (await futurebotPineconePromise)?.data
             } catch (e) {
                 if (incomingInput.overrideConfig.expertProfileUid)
                     logger.info('No context data found for profile ' + incomingInput.overrideConfig.expertProfileUid)
             }
 
-            if (acSummaryPromise) acSummary = (await acSummaryPromise).data
+            if (acSummaryPromise) acSummary = (await acSummaryPromise)?.data
 
             if (acSummary) {
                 if (acSummary.error) throw new InternalFlowiseError(403, acSummary.reason)
