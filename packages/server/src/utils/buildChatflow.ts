@@ -406,7 +406,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             try {
                 json = JSON.parse(agentResult.substring(agentResult.indexOf('{'), agentResult.lastIndexOf('}') + 1))
             } catch (e) {
-                logger.warn('WARNING: failed to parse agent json, agentResult: ' + agentResult)
+                logger.warn('WARNING: failed to parse agent json, agentResult: ' + agentResult.substr(0, 30))
                 json = { isGeneral: true, isAboutUser: true, isAboutFuturebot: true, relevantTools: tools }
             }
 
@@ -479,7 +479,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 knowHowInternalPromise = getKnowHow(req.body.question, incomingInput.overrideConfig.pineconeNamespace)
 
             if (knowHowPromise) {
-                let profileKnowHow = (await knowHowPromise).data
+                let profileKnowHow = (await knowHowPromise)?.data
                 if (profileKnowHow && profileKnowHow.texts)
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
                         '{know_how}',
@@ -488,7 +488,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             }
 
             if (knowHowInternalPromise) {
-                let internalKnowHow = (await knowHowInternalPromise).data
+                let internalKnowHow = (await knowHowInternalPromise)?.data
                 if (internalKnowHow && internalKnowHow.texts)
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
                         '{know_how_internal}',
@@ -497,7 +497,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             }
 
             if (acsPromise) {
-                let acs = (await acsPromise).data
+                let acs = (await acsPromise)?.data
                 if (acs && !acs.error)
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
                         '{ac_summary}',
@@ -832,19 +832,29 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 }
 
 async function getKnowHow(question: string, expertProfileUid: string) {
-    return await axios.post('https://' + process.env.LAMBDA_URL + '.lambda-url.eu-central-1.on.aws/', {
-        method: 'search',
-        value: question,
-        userId: expertProfileUid
-    })
+    try {
+        return await axios.post('https://' + process.env.LAMBDA_URL + '.lambda-url.eu-central-1.on.aws/', {
+            method: 'search',
+            value: question,
+            userId: expertProfileUid
+        })
+    } catch (e) {
+        logger.error(`getKnowHow failed, question "${question}" expertProfileUid ${expertProfileUid}`)
+        logger.error(e)
+    }
 }
 
 async function getAcSummary(expertProfileUid: string, scope: string) {
-    return await axios.post('https://futurebot.ai/api/flowise/v1/ac_summary/', {
-        userId: expertProfileUid,
-        scope: scope,
-        secret: process.env.FUTUREBOT_API_SECRET
-    })
+    try {
+        return await axios.post('https://futurebot.ai/api/flowise/v1/ac_summary/', {
+            userId: expertProfileUid,
+            scope: scope,
+            secret: process.env.FUTUREBOT_API_SECRET
+        })
+    } catch (e) {
+        logger.error(`getAcSummary failed, expertProfileUid ${expertProfileUid}, scope ${scope}`)
+        logger.error(e)
+    }
 }
 
 const utilBuildAgentResponse = async (
