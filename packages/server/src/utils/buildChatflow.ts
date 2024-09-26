@@ -480,11 +480,17 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
             if (knowHowPromise) {
                 let profileKnowHow = (await knowHowPromise)?.data
-                if (profileKnowHow && profileKnowHow.texts)
+                if (profileKnowHow && profileKnowHow.texts) {
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
                         '{know_how}',
                         JSON.stringify(profileKnowHow.texts).replaceAll('{', '⦃').replaceAll('}', '⦄')
                     )
+                } else {
+                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                        '{know_how}',
+                        'empty'
+                    )
+                }
             }
 
             if (knowHowInternalPromise) {
@@ -494,6 +500,11 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                         '{know_how_internal}',
                         JSON.stringify(internalKnowHow.texts).replaceAll('{', '⦃').replaceAll('}', '⦄')
                     )
+                else
+                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                        '{know_how_internal}',
+                        'empty'
+                    )
             }
 
             if (acsPromise) {
@@ -502,6 +513,11 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
                         '{ac_summary}',
                         JSON.stringify(acs).replaceAll('{', '⦃').replaceAll('}', '⦄')
+                    )
+                else
+                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                        '{ac_summary}',
+                        'empty'
                     )
             }
         }
