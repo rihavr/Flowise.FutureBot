@@ -299,6 +299,8 @@ class ConversationalRetrievalQAChain_Chains implements INode {
             }
         }
 
+        if (text === 'Failed to fetch') text = 'Chyba komunikace se serverem, zkontrolujte své internetové připojení.'
+
         await memory.addChatMessages(
             [
                 {
@@ -328,10 +330,15 @@ function preventRepeatingRoles(messages: IMessage[]): IMessage[] | BaseMessage[]
         if (messages[i].type === currentMessage.type) {
             currentMessage.message += '\n\n' + messages[i].message
         } else {
+            if (!currentMessage.message) currentMessage.message = '(failed to load message content)'
+
             mergedMessages.push(currentMessage)
             currentMessage = { ...messages[i] }
         }
     }
+
+    if (!currentMessage.message) currentMessage.message = '(failed to load message content)'
+
     mergedMessages.push(currentMessage)
 
     if (mergedMessages[0].type === 'apiMessage') mergedMessages.shift() //remove from history, anthropic will throw error if first message is from assistant
