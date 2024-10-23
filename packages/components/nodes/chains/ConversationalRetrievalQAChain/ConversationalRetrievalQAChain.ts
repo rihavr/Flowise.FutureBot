@@ -251,6 +251,12 @@ class ConversationalRetrievalQAChain_Chains implements INode {
             callbacks.push(new LCConsoleCallbackHandler())
         }
 
+        try {
+            if (isFuturebot) options.logger.info('chat_history:\n' + JSON.stringify(preventRepeatingRoles(history)))
+        } catch (e) {
+            //ignore
+        }
+
         const stream = answerChain.streamLog(
             { question: input, chat_history: preventRepeatingRoles(history) },
             { callbacks },
