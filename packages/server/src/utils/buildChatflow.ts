@@ -444,6 +444,9 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
             let futureBotPrompt =
                 (!language ? '' : 'Odpovědi piš v jazyce ' + language + '\n') +
+                'Note that current time and date (in Europe/Frankfurt timezone) is ' +
+                getDateTimeString() +
+                '\n' +
                 pretools +
                 '\n--RELEVANTNÍ NÁSTROJE FUTUREBOTA PRO TENTO DOTAZ:--\n' +
                 (!json.relevantTools || json.relevantTools === '' ? 'žádné' : json.relevantTools) +
@@ -460,6 +463,12 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
             incomingInput.overrideConfig.systemMessagePrompt = futureBotPrompt.replace(/{/g, '{{').replace(/}/g, '}}') //needed to ensure the template replacing {terms} works
             incomingInput.overrideConfig.isFuturebot = true
+        } else if (incomingInput.overrideConfig?.systemMessagePrompt) {
+            incomingInput.overrideConfig.systemMessagePrompt =
+                'Note that current time and date (in Europe/Frankfurt timezone) is ' +
+                getDateTimeString() +
+                '\n\n' +
+                incomingInput.overrideConfig.systemMessagePrompt
         }
 
         if (isInternalFuturebotChat && incomingInput.overrideConfig && incomingInput.overrideConfig.expertProfileUid) {
@@ -847,6 +856,35 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         logger.error('[server]: Error:', e)
         throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, getErrorMessage(e))
     }
+}
+
+function getDateTimeString() {
+    let date = new Date()
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const months = [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December'
+    ]
+
+    const dayOfWeek = days[date.getDay()]
+    const year = date.getFullYear()
+    const month = months[date.getMonth()]
+    const day = date.getDate()
+    const hour = date.getHours().toString().padStart(2, '0')
+    const minute = date.getMinutes().toString().padStart(2, '0')
+    const second = date.getSeconds().toString().padStart(2, '0')
+
+    return `${dayOfWeek}, ${month} ${day}, ${year} ${hour}:${minute}:${second}`
 }
 
 async function getKnowHow(question: string, expertProfileUid: string) {
