@@ -444,9 +444,9 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
 
             let futureBotPrompt =
                 (!language ? '' : 'Odpovědi piš v jazyce ' + language + '\n') +
-                'Note that current time and date (in Europe/Frankfurt timezone) is ' +
+                'Note that current UTC time and date (right now, when you are answering) is ' +
                 getDateTimeString() +
-                '\n' +
+                ' If you do not know current users timezone, assume its Europe/Prague.\n' +
                 pretools +
                 '\n--RELEVANTNÍ NÁSTROJE FUTUREBOTA PRO TENTO DOTAZ:--\n' +
                 (!json.relevantTools || json.relevantTools === '' ? 'žádné' : json.relevantTools) +
@@ -465,9 +465,9 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             incomingInput.overrideConfig.isFuturebot = true
         } else if (incomingInput.overrideConfig?.systemMessagePrompt) {
             incomingInput.overrideConfig.systemMessagePrompt =
-                'Note that current time and date (in Europe/Frankfurt timezone) is ' +
+                'Note that current UTC time and date (right now, when you are answering) is ' +
                 getDateTimeString() +
-                '\n\n' +
+                ' If you do not know current users timezone, assume its Europe/Prague.\n\n' +
                 incomingInput.overrideConfig.systemMessagePrompt
         }
 
