@@ -150,18 +150,18 @@ async function chatCompletion(messages: OpenAIMessage[], model: string, temperat
  * @param {boolean} isInternal
  */
 export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInternal: boolean = false): Promise<any> => {
+    let incomingInput: IncomingInput = req?.body
+    const chatflowid = req?.params?.id
+    const isMyCloneGPT = chatflowid === 'e2447fff-842f-4584-8eea-e983d5d9e663'
+    const isInternalFuturebotChat = chatflowid === process.env.INTERNAL_CHATFLOW_ID
+
     try {
         logger.info('utilBuildChatflow')
 
         const appServer = getRunningExpressApp()
-        const chatflowid = req.params.id
         const baseURL = `${req.protocol}://${req.get('host')}`
 
-        let incomingInput: IncomingInput = req.body
         let nodeToExecuteData: INodeData
-
-        const isMyCloneGPT = chatflowid === 'e2447fff-842f-4584-8eea-e983d5d9e663'
-        const isInternalFuturebotChat = chatflowid === process.env.INTERNAL_CHATFLOW_ID
 
         /*if (isMyCloneGPT && incomingInput.overrideConfig) {
                 let shouldQueryP
@@ -854,6 +854,27 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
         return result
     } catch (e) {
         logger.error('[server]: Error:', e)
+
+        try {
+            //url, success (bool), type, context, reason, error, stack
+            let c
+            if (incomingInput?.overrideConfig && incomingInput.overrideConfig.pineconeNamespace === process.env.FUTUREBOT_ID)
+                c = 'UNIVERZALNI_CHATBOT'
+            else if (isInternalFuturebotChat) c = 'CHATBOT_V_NASTROJI'
+            else if (isMyCloneGPT) c = 'CHATBOT_MYCLONE'
+            else c = 'CHATBOT'
+
+            await axios.post(
+                'https://futurebot.ai/api/webscraper/v1/save_report/',
+                { context: c, success: false, error: getErrorMessage(e) },
+                {
+                    timeout: 5000
+                }
+            )
+        } catch (ee) {
+            logger.error('[server]: Failed to save error report.')
+        }
+
         throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, getErrorMessage(e))
     }
 }

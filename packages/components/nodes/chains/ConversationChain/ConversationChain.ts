@@ -255,6 +255,8 @@ const prepareChain = async (nodeData: INodeData, options: ICommonObject, session
             [memoryKey]: async () => {
                 const history = await memory.getChatMessages(sessionId, true, prependMessages)
                 return history
+                /*const history = ((await memory.getChatMessages(sessionId, true, prependMessages)) as BaseMessage[]) ?? []
+                return preventRepeatingRoles(history)*/
             },
             ...promptVariables
         },
@@ -265,5 +267,31 @@ const prepareChain = async (nodeData: INodeData, options: ICommonObject, session
 
     return conversationChain
 }
+
+/*function preventRepeatingRoles(messages: IMessage[]): IMessage[] | BaseMessage[] {
+    if (messages.length === 0) return []
+
+    const mergedMessages = []
+    let currentMessage = { ...messages[0] }
+
+    for (let i = 1; i < messages.length; i++) {
+        if (messages[i].type === currentMessage.type) {
+            currentMessage.message += '\n\n' + messages[i].message
+        } else {
+            if (!currentMessage.message) currentMessage.message = '(failed to load message content)'
+
+            mergedMessages.push(currentMessage)
+            currentMessage = { ...messages[i] }
+        }
+    }
+
+    if (!currentMessage.message) currentMessage.message = '(failed to load message content)'
+
+    mergedMessages.push(currentMessage)
+
+    if (mergedMessages[0].type === 'apiMessage') mergedMessages.shift() //remove from history, anthropic will throw error if first message is from assistant
+
+    return mergedMessages
+}*/
 
 module.exports = { nodeClass: ConversationChain_Chains }
