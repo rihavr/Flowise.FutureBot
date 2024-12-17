@@ -354,7 +354,7 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             let split2 = split[1].split('--KONEC SEZNAMU NÁSTROJŮ FUTUREBOTA--')
 
             let tools = split2[0]
-            let postTools = split2[1]
+            let postTools = split2[1] //
 
             let messages: OpenAIMessage[] = [
                 {
