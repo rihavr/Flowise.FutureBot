@@ -475,11 +475,26 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
             let acsPromise
             let knowHowPromise
             let knowHowInternalPromise
-            if (incomingInput.overrideConfig.systemMessagePrompt.includes('{ac_summary}'))
-                acsPromise = getAcSummary(incomingInput.overrideConfig.expertProfileUid, 'full')
+            if (incomingInput.overrideConfig.systemMessagePrompt.includes('{ac_summary}')) {
+                if (incomingInput.overrideConfig.expertProfileUid && incomingInput.overrideConfig.expertProfileUid.length > 0)
+                    acsPromise = getAcSummary(incomingInput.overrideConfig.expertProfileUid, 'full')
+                else
+                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replace(
+                        '{ac_summary}',
+                        ''
+                    )
+            }
 
-            if (incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how}'))
+            if (incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how}')) {
                 knowHowPromise = getKnowHow(req.body.question, incomingInput.overrideConfig.expertProfileUid)
+                if (incomingInput.overrideConfig.expertProfileUid && incomingInput.overrideConfig.expertProfileUid.length > 0)
+                    acsPromise = getAcSummary(incomingInput.overrideConfig.expertProfileUid, 'full')
+                else
+                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replace(
+                        '{know_how}',
+                        ''
+                    )
+            }
 
             if (
                 incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how_internal}') &&
