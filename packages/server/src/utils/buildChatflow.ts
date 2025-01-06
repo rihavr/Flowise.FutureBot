@@ -471,76 +471,81 @@ export const utilBuildChatflow = async (req: Request, socketIO?: Server, isInter
                 incomingInput.overrideConfig.systemMessagePrompt
         }
 
-        if (isInternalFuturebotChat && incomingInput.overrideConfig && incomingInput.overrideConfig.expertProfileUid) {
-            let acsPromise
-            let knowHowPromise
-            let knowHowInternalPromise
-            if (incomingInput.overrideConfig.systemMessagePrompt.includes('{ac_summary}')) {
-                if (incomingInput.overrideConfig.expertProfileUid && incomingInput.overrideConfig.expertProfileUid.length > 0)
+        if (isInternalFuturebotChat && incomingInput.overrideConfig) {
+            if (incomingInput.overrideConfig.expertProfileUid) {
+                let acsPromise
+                let knowHowPromise
+                let knowHowInternalPromise
+                if (incomingInput.overrideConfig.systemMessagePrompt.includes('{ac_summary}'))
                     acsPromise = getAcSummary(incomingInput.overrideConfig.expertProfileUid, 'full')
-                else
-                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replace(
-                        '{ac_summary}',
-                        ''
-                    )
-            }
 
-            if (incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how}')) {
-                knowHowPromise = getKnowHow(req.body.question, incomingInput.overrideConfig.expertProfileUid)
-                if (incomingInput.overrideConfig.expertProfileUid && incomingInput.overrideConfig.expertProfileUid.length > 0)
-                    acsPromise = getAcSummary(incomingInput.overrideConfig.expertProfileUid, 'full')
-                else
-                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replace(
-                        '{know_how}',
-                        ''
-                    )
-            }
+                if (incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how}'))
+                    knowHowPromise = getKnowHow(req.body.question, incomingInput.overrideConfig.expertProfileUid)
 
-            if (
-                incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how_internal}') &&
-                incomingInput.overrideConfig.pineconeNamespace
-            )
-                knowHowInternalPromise = getKnowHow(req.body.question, incomingInput.overrideConfig.pineconeNamespace)
+                if (
+                    incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how_internal}') &&
+                    incomingInput.overrideConfig.pineconeNamespace
+                )
+                    knowHowInternalPromise = getKnowHow(req.body.question, incomingInput.overrideConfig.pineconeNamespace)
 
-            if (knowHowPromise) {
-                let profileKnowHow = (await knowHowPromise)?.data
-                if (profileKnowHow && profileKnowHow.texts) {
-                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
-                        '{know_how}',
-                        JSON.stringify(profileKnowHow.texts).replaceAll('{', '⦃').replaceAll('}', '⦄')
-                    )
-                } else {
-                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
-                        '{know_how}',
-                        'empty'
-                    )
+                if (knowHowPromise) {
+                    let profileKnowHow = (await knowHowPromise)?.data
+                    if (profileKnowHow && profileKnowHow.texts) {
+                        incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                            '{know_how}',
+                            JSON.stringify(profileKnowHow.texts).replaceAll('{', '⦃').replaceAll('}', '⦄')
+                        )
+                    } else {
+                        incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                            '{know_how}',
+                            'empty'
+                        )
+                    }
                 }
-            }
 
-            if (knowHowInternalPromise) {
-                let internalKnowHow = (await knowHowInternalPromise)?.data
-                if (internalKnowHow && internalKnowHow.texts)
+                if (knowHowInternalPromise) {
+                    let internalKnowHow = (await knowHowInternalPromise)?.data
+                    if (internalKnowHow && internalKnowHow.texts)
+                        incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                            '{know_how_internal}',
+                            JSON.stringify(internalKnowHow.texts).replaceAll('{', '⦃').replaceAll('}', '⦄')
+                        )
+                    else
+                        incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                            '{know_how_internal}',
+                            'empty'
+                        )
+                }
+
+                if (acsPromise) {
+                    let acs = (await acsPromise)?.data
+                    if (acs && !acs.error)
+                        incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                            '{ac_summary}',
+                            JSON.stringify(acs).replaceAll('{', '⦃').replaceAll('}', '⦄')
+                        )
+                    else
+                        incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
+                            '{ac_summary}',
+                            'empty'
+                        )
+                }
+            } else {
+                if (incomingInput.overrideConfig.systemMessagePrompt.includes('{ac_summary}'))
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
-                        '{know_how_internal}',
-                        JSON.stringify(internalKnowHow.texts).replaceAll('{', '⦃').replaceAll('}', '⦄')
-                    )
-                else
-                    incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
-                        '{know_how_internal}',
+                        '{ac_summary}',
                         'empty'
                     )
-            }
 
-            if (acsPromise) {
-                let acs = (await acsPromise)?.data
-                if (acs && !acs.error)
+                if (incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how}'))
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
-                        '{ac_summary}',
-                        JSON.stringify(acs).replaceAll('{', '⦃').replaceAll('}', '⦄')
+                        '{know_how}',
+                        'empty'
                     )
-                else
+
+                if (incomingInput.overrideConfig.systemMessagePrompt.includes('{know_how_internal}'))
                     incomingInput.overrideConfig.systemMessagePrompt = incomingInput.overrideConfig.systemMessagePrompt.replaceAll(
-                        '{ac_summary}',
+                        '{know_how_internal}',
                         'empty'
                     )
             }
